@@ -138,3 +138,19 @@ class TestCustomBranchFlow:
     def test_merge_has_two_parents(self, custom_branch_run):
         parents = [s.id for s in custom_branch_run["merge"].parent_steps]
         assert sorted(parents) == ["a", "b"]
+
+
+class TestAnnotatedFlowExecution:
+    """Test that @step(start=True)/@step(end=True) works in actual execution."""
+
+    def test_custom_named_flow_completes(self, custom_named_run):
+        """custom_named_flow.py now uses annotations."""
+        assert custom_named_run.successful
+
+    def test_single_step_flow_completes(self, single_step_run):
+        """single_step_flow.py now uses @step(start=True, end=True)."""
+        assert single_step_run.successful
+
+    def test_custom_branch_flow_completes(self, custom_branch_run):
+        """custom_branch_flow.py now uses annotations."""
+        assert custom_branch_run.successful

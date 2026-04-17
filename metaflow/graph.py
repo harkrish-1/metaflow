@@ -48,7 +48,16 @@ def deindent_docstring(doc):
 
 class DAGNode(object):
     def __init__(
-        self, func_ast, decos, wrappers, config_decorators, doc, source_file, lineno
+        self,
+        func_ast,
+        decos,
+        wrappers,
+        config_decorators,
+        doc,
+        source_file,
+        lineno,
+        is_start_step=False,
+        is_end_step=False,
     ):
         self.name = func_ast.name
         self.source_file = source_file
@@ -60,6 +69,9 @@ class DAGNode(object):
         self.config_decorators = config_decorators
         self.doc = deindent_docstring(doc)
         self.parallel_step = any(getattr(deco, "IS_PARALLEL", False) for deco in decos)
+        # Explicit start/end annotations from @step(start=True) / @step(end=True)
+        self.is_start_step = is_start_step
+        self.is_end_step = is_end_step
 
         # these attributes are populated by _parse
         self.tail_next_lineno = 0
@@ -264,41 +276,45 @@ class FlowGraph(object):
 
     def _identify_start_end(self):
         """
-        Determine the start and end steps from graph structure.
+        Determine the start and end steps.
 
-        Start step: the unique node with zero in-degree (no other node
-        transitions to it). End step: the unique node with zero out-degree
-        (it has no self.next() transitions). Internal steps (names starting
-        with '_') are excluded.
+        Uses explicit ``@step(start=True)`` / ``@step(end=True)`` annotations
+        if present.  Falls back to looking for steps named ``"start"`` /
+        ``"end"`` for backward compatibility.
 
-        Sets self.start_step and self.end_step to the step name strings,
-        or None if the graph is malformed (validated later by lint).
-        Also assigns the "start" and "end" node types based on structure.
+        Sets ``self.start_step`` and ``self.end_step`` to step name strings,
+        or ``None`` if the graph is malformed (validated later by lint).
+        Also assigns the ``"start"`` and ``"end"`` node types.
         """
-        # Compute in-degree from out_funcs (already set by _parse)
-        in_degree = {name: 0 for name in self.nodes}
-        for node in self.nodes.values():
-            for target in node.out_funcs:
-                if target in in_degree:
-                    in_degree[target] += 1
-
-        # Start = zero in-degree (exclude internal steps starting with _)
-        candidates_start = [
+        # 1. Look for explicit annotations
+        annotated_start = [
             name
-            for name, deg in in_degree.items()
-            if deg == 0 and not name.startswith("_")
+            for name, node in self.nodes.items()
+            if node.is_start_step and not name.startswith("_")
         ]
-        # End = zero out-degree (exclude internal steps starting with _)
-        candidates_end = [
+        annotated_end = [
             name
-            for name in self.nodes
-            if not self.nodes[name].out_funcs and not name.startswith("_")
+            for name, node in self.nodes.items()
+            if node.is_end_step and not name.startswith("_")
         ]
 
-        self.start_step = candidates_start[0] if len(candidates_start) == 1 else None
-        self.end_step = candidates_end[0] if len(candidates_end) == 1 else None
+        # 2. Determine start step (annotation first, then name fallback)
+        if len(annotated_start) == 1:
+            self.start_step = annotated_start[0]
+        elif len(annotated_start) == 0:
+            self.start_step = "start" if "start" in self.nodes else None
+        else:
+            self.start_step = None  # Multiple annotated — lint will catch
 
-        # Assign types based on structure.
+        # 3. Determine end step (annotation first, then name fallback)
+        if len(annotated_end) == 1:
+            self.end_step = annotated_end[0]
+        elif len(annotated_end) == 0:
+            self.end_step = "end" if "end" in self.nodes else None
+        else:
+            self.end_step = None  # Multiple annotated — lint will catch
+
+        # 4. Assign types based on identified start/end.
         # Only upgrade "linear" → "start" for the entry point; do NOT override
         # "split", "foreach", etc. since those types are needed for
         # split/join balance checking.
@@ -332,6 +348,8 @@ class FlowGraph(object):
                     func.__doc__,
                     source_file,
                     lineno,
+                    is_start_step=getattr(func, "is_start_step", False),
+                    is_end_step=getattr(func, "is_end_step", False),
                 )
                 nodes[element] = node
         return nodes

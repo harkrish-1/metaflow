@@ -4,7 +4,7 @@ from metaflow import FlowSpec, step
 class CustomBranchFlow(FlowSpec):
     """Flow with branches and custom step names."""
 
-    @step
+    @step(start=True)
     def entry(self):
         self.next(self.a, self.b)
 
@@ -23,7 +23,7 @@ class CustomBranchFlow(FlowSpec):
         self.vals = sorted([i.val for i in inputs])
         self.next(self.done)
 
-    @step
+    @step(end=True)
     def done(self):
         pass
 

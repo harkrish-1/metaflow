@@ -520,13 +520,7 @@ def add_custom_parameters(deploy_mode=False):
 
 
 class InitParameter(Parameter):
-    """
-    Parameter for StepSpec init() phase.
-
-    Behaves identically to Parameter in CLI mode. In direct invocation,
-    InitParameter values are passed to the constructor (alongside Config)
-    rather than to __call__.
-    """
+    """Parameter for StepSpec init() phase."""
 
     IS_INIT_PARAMETER = True
 

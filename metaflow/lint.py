@@ -60,13 +60,41 @@ def check_reserved_words(graph):
 def check_basic_steps(graph):
     if graph.start_step is None:
         raise LintWarn(
-            "Your flow must have exactly one step with no incoming transitions "
-            "(the entry point). Found zero or multiple candidates."
+            "Your flow must have exactly one start step. Either name a step "
+            "'start' or use @step(start=True)."
         )
     if graph.end_step is None:
         raise LintWarn(
-            "Your flow must have exactly one step with no outgoing transitions "
-            "(the terminal step). Found zero or multiple candidates."
+            "Your flow must have exactly one end step. Either name a step "
+            "'end' or use @step(end=True)."
+        )
+
+
+@linter.ensure_static_graph
+@linter.check
+def check_start_end_degree(graph):
+    """Validate that the start step has no incoming and the end step has no outgoing."""
+    if graph.start_step is None or graph.end_step is None:
+        return
+
+    start_node = graph[graph.start_step]
+    if start_node.in_funcs:
+        raise LintWarn(
+            "The start step *%s* has incoming transitions from %s. "
+            "A start step must have no incoming transitions."
+            % (graph.start_step, ", ".join(start_node.in_funcs)),
+            start_node.func_lineno,
+            start_node.source_file,
+        )
+
+    end_node = graph[graph.end_step]
+    if end_node.out_funcs:
+        raise LintWarn(
+            "The end step *%s* has outgoing transitions. "
+            "An end step must have no outgoing transitions (no self.next())."
+            % graph.end_step,
+            end_node.func_lineno,
+            end_node.source_file,
         )
 
 

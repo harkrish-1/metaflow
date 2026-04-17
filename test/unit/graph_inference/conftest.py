@@ -43,3 +43,11 @@ stepspec_init_run = pytest.fixture(scope="session")(
         "stepspec_init_flow.py",
     )
 )
+
+stepspec_config_run = pytest.fixture(scope="session")(
+    create_flow_fixture("StepSpecConfigFlow", "stepspec_config_flow.py")
+)
+
+stepspec_decorated_run = pytest.fixture(scope="session")(
+    create_flow_fixture("StepSpecDecoratedFlow", "stepspec_decorated_flow.py")
+)

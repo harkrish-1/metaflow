@@ -38,3 +38,26 @@ class TestStepSpecInitExecution:
     def test_init_state_persisted(self, stepspec_init_run):
         end_task = stepspec_init_run.end_task
         assert end_task["computed"].data == 20
+
+
+class TestStepSpecConfigExecution:
+    def test_flow_completes(self, stepspec_config_run):
+        assert stepspec_config_run.successful
+        assert stepspec_config_run.finished
+
+    def test_config_used_in_call(self, stepspec_config_run):
+        end_task = stepspec_config_run.end_task
+        assert end_task is not None
+        # value=10 (default), cfg.multiplier=3 (default), result = 10 * 3 = 30
+        assert end_task["result"].data == 30
+
+
+class TestStepSpecDecoratedExecution:
+    def test_flow_completes(self, stepspec_decorated_run):
+        assert stepspec_decorated_run.successful
+        assert stepspec_decorated_run.finished
+
+    def test_output_correct(self, stepspec_decorated_run):
+        end_task = stepspec_decorated_run.end_task
+        assert end_task is not None
+        assert end_task["output"].data == "HELLO"

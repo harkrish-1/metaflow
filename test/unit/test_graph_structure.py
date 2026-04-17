@@ -8,6 +8,7 @@ Verifies that:
 - Node types are assigned correctly based on structure
 - _graph_info contains start_step/end_step fields
 - Lint validation works with structural inference
+- @step(start=True) / @step(end=True) annotations work correctly
 """
 
 import pytest
@@ -32,7 +33,7 @@ class StandardFlow(FlowSpec):
 
 
 class CustomNamedLinearFlow(FlowSpec):
-    @step
+    @step(start=True)
     def begin(self):
         self.x = 1
         self.next(self.middle)
@@ -42,19 +43,19 @@ class CustomNamedLinearFlow(FlowSpec):
         self.x += 1
         self.next(self.finish)
 
-    @step
+    @step(end=True)
     def finish(self):
         pass
 
 
 class SingleStepFlow(FlowSpec):
-    @step
+    @step(start=True, end=True)
     def only(self):
         self.x = 42
 
 
 class CustomNamedBranchFlow(FlowSpec):
-    @step
+    @step(start=True)
     def entry(self):
         self.next(self.a, self.b)
 
@@ -70,13 +71,13 @@ class CustomNamedBranchFlow(FlowSpec):
     def merge(self, inputs):
         self.next(self.done)
 
-    @step
+    @step(end=True)
     def done(self):
         pass
 
 
 class CustomNamedForeachFlow(FlowSpec):
-    @step
+    @step(start=True)
     def init(self):
         self.items = [1, 2, 3]
         self.next(self.process, foreach="items")
@@ -91,7 +92,7 @@ class CustomNamedForeachFlow(FlowSpec):
         self.results = [i.result for i in inputs]
         self.next(self.final)
 
-    @step
+    @step(end=True)
     def final(self):
         pass
 
@@ -99,7 +100,7 @@ class CustomNamedForeachFlow(FlowSpec):
 class SplitStartFlow(FlowSpec):
     """Start step that is also a split."""
 
-    @step
+    @step(start=True)
     def origin(self):
         self.next(self.left, self.right)
 
@@ -115,7 +116,7 @@ class SplitStartFlow(FlowSpec):
     def rejoin(self, inputs):
         self.next(self.terminus)
 
-    @step
+    @step(end=True)
     def terminus(self):
         pass
 
@@ -313,6 +314,81 @@ class TestLintWithStructuralInference:
 
 
 # ---------------------------------------------------------------------------
+# Tests: Annotation mechanics
+# ---------------------------------------------------------------------------
+
+
+class TestAnnotationMechanics:
+    """Tests that @step(start=True/end=True) annotations are stored and used correctly."""
+
+    def test_annotation_attributes_on_plain_step(self):
+        """Plain @step sets is_start_step=False and is_end_step=False."""
+        graph = StandardFlow._graph
+        assert graph["start"].is_start_step is False
+        assert graph["start"].is_end_step is False
+        assert graph["end"].is_start_step is False
+        assert graph["end"].is_end_step is False
+
+    def test_annotation_attributes_on_annotated_step(self):
+        """@step(start=True) and @step(end=True) set the flags on the node."""
+        graph = CustomNamedLinearFlow._graph
+        assert graph["begin"].is_start_step is True
+        assert graph["begin"].is_end_step is False
+        assert graph["finish"].is_start_step is False
+        assert graph["finish"].is_end_step is True
+        # Middle step has neither
+        assert graph["middle"].is_start_step is False
+        assert graph["middle"].is_end_step is False
+
+    def test_annotated_start_correct(self):
+        """@step(start=True) flow has start_step matching the annotated step."""
+        graph = CustomNamedLinearFlow._graph
+        assert graph.start_step == "begin"
+
+    def test_annotated_end_correct(self):
+        """@step(end=True) flow has end_step matching the annotated step."""
+        graph = CustomNamedLinearFlow._graph
+        assert graph.end_step == "finish"
+
+    def test_annotated_single_step(self):
+        """@step(start=True, end=True) single-step flow works."""
+        graph = SingleStepFlow._graph
+        assert graph["only"].is_start_step is True
+        assert graph["only"].is_end_step is True
+        assert graph.start_step == "only"
+        assert graph.end_step == "only"
+
+    def test_mixed_annotated_start_named_end(self):
+        """Annotated start + name-based end fallback: only start is annotated,
+        end step is named 'end' and discovered by name fallback."""
+
+        class MixedFlow(FlowSpec):
+            @step(start=True)
+            def begin(self):
+                self.next(self.end)
+
+            @step
+            def end(self):
+                pass
+
+        graph = MixedFlow._graph
+        assert graph.start_step == "begin"
+        assert graph.end_step == "end"
+        # begin has annotation, end does not
+        assert graph["begin"].is_start_step is True
+        assert graph["end"].is_end_step is False
+
+    def test_backward_compat_name_based(self):
+        """Flow with just 'start'/'end' names still works (no annotations)."""
+        graph = StandardFlow._graph
+        assert graph.start_step == "start"
+        assert graph.end_step == "end"
+        # No annotations set
+        assert graph["start"].is_start_step is False
+        assert graph["end"].is_end_step is False
+
+
+# ---------------------------------------------------------------------------
 # StepSpec flow definitions
 # ---------------------------------------------------------------------------
 
@@ -375,95 +451,3 @@ class TestStepSpecGraph:
 
     def test_init_call_passes_lint(self):
         linter.run_checks(InitCallStepSpec._graph)
-
-
-# ---------------------------------------------------------------------------
-# Tests: StepSpec direct invocation
-# ---------------------------------------------------------------------------
-
-
-class TestStepSpecDirectInvocation:
-    """Tests for StepSpec direct invocation."""
-
-    def test_basic_call(self):
-        s = SimpleStepSpec(use_cli=False)
-        s(text="world")
-        assert s.output == "WORLD"
-
-    def test_init_and_call(self):
-        m = InitCallStepSpec(factor=3)
-        m(value=5)
-        assert m.result == 150
-
-    def test_multiple_calls(self):
-        s = SimpleStepSpec(use_cli=False)
-        s(text="a")
-        assert s.output == "A"
-        s(text="b")
-        assert s.output == "B"
-
-    def test_init_state_persists_across_calls(self):
-        m = InitCallStepSpec(factor=5)
-        m(value=2)
-        assert m.result == 100  # 2 * (5*10)
-        m(value=3)
-        assert m.result == 150  # 3 * (5*10), init not re-run
-
-    def test_default_values(self):
-        s = SimpleStepSpec(use_cli=False)
-        s()  # use default text="hello"
-        assert s.output == "HELLO"
-
-    def test_config_kwargs_imply_direct_mode(self):
-        """Passing any kwarg should imply use_cli=False."""
-        m = InitCallStepSpec(factor=2)
-        m(value=3)
-        assert m.result == 60
-
-    def test_init_parameter_defaults(self):
-        """InitParameter defaults should be applied when no kwarg given."""
-        m = InitCallStepSpec(use_cli=False)  # factor defaults to 2
-        m(value=5)
-        assert m.result == 100  # 5 * (2*10)
-
-    def test_call_param_rejected_in_constructor(self):
-        """Passing a call-phase Parameter to the constructor should error."""
-        import pytest
-
-        with pytest.raises(TypeError):
-            SimpleStepSpec(text="wrong_place")
-
-
-# ---------------------------------------------------------------------------
-# Tests: StepSpec with Config parameters
-# ---------------------------------------------------------------------------
-
-
-class TestStepSpecWithConfig:
-    """Tests for StepSpec with Config parameters."""
-
-    def test_config_default(self):
-        from metaflow.user_configs.config_parameters import Config
-
-        class ConfigSpec(StepSpec):
-            cfg = Config("cfg", default_value={"key": "val"})
-
-            def call(self):
-                self.result = self.cfg
-
-        c = ConfigSpec(use_cli=False)
-        c()
-        assert c.result == {"key": "val"}
-
-    def test_config_override(self):
-        from metaflow.user_configs.config_parameters import Config
-
-        class ConfigSpec2(StepSpec):
-            cfg = Config("cfg", default_value={"key": "default"})
-
-            def call(self):
-                self.result = self.cfg
-
-        c = ConfigSpec2(cfg={"key": "override"})
-        c()
-        assert c.result == {"key": "override"}

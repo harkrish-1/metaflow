@@ -4,7 +4,7 @@ from metaflow import FlowSpec, step
 class CustomNamedFlow(FlowSpec):
     """Flow with non-standard step names to test structural inference."""
 
-    @step
+    @step(start=True)
     def begin(self):
         self.x = 1
         self.next(self.middle)
@@ -14,7 +14,7 @@ class CustomNamedFlow(FlowSpec):
         self.x += 1
         self.next(self.finish)
 
-    @step
+    @step(end=True)
     def finish(self):
         self.x += 1
 

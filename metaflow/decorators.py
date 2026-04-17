@@ -957,7 +957,10 @@ def step(
 
 
 def step(
-    f: Union[Callable[[FlowSpecDerived], None], Callable[[FlowSpecDerived, Any], None]],
+    f=None,
+    *,
+    start=False,
+    end=False,
 ):
     """
     Marks a method in a FlowSpec as a Metaflow Step. Note that this
@@ -982,20 +985,36 @@ def step(
 
     Parameters
     ----------
-    f : Union[Callable[[FlowSpecDerived], None], Callable[[FlowSpecDerived, Any], None]]
-        Function to make into a Metaflow Step
+    f : callable, optional
+        Function to make into a Metaflow Step. When using keyword arguments
+        (e.g. ``@step(start=True)``), this is ``None`` and a decorator
+        function is returned instead.
+    start : bool, default False
+        Mark this step as the start (entry) step of the flow.
+    end : bool, default False
+        Mark this step as the end (terminal) step of the flow.
 
     Returns
     -------
-    Union[Callable[[FlowSpecDerived, StepFlag], None], Callable[[FlowSpecDerived, Any, StepFlag], None]]
-        Function that is a Metaflow Step
+    callable
+        The decorated function, or a decorator if keyword arguments were used.
     """
-    f.is_step = True
-    f.decorators = []
-    f.config_decorators = []
-    f.wrappers = []
-    f.name = f.__name__
-    return f
+
+    def _apply(func):
+        func.is_step = True
+        func.decorators = []
+        func.config_decorators = []
+        func.wrappers = []
+        func.name = func.__name__
+        func.is_start_step = start
+        func.is_end_step = end
+        return func
+
+    if f is not None:
+        # Called as @step (no parens)
+        return _apply(f)
+    # Called as @step(start=True) etc.
+    return _apply
 
 
 def _import_plugin_decorators(globals_dict):
